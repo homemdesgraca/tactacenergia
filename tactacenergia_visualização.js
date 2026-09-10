@@ -7,6 +7,7 @@ var MIN = -20, MAX = 50;
 var valorAlvo  = -5;
 var valorSuave = -5;
 var distanciaAlvo = 0;
+var distanciaRecebida = false;
 var tampaAlvo = 0;
 
 function definirValor(v){
@@ -21,7 +22,8 @@ function definirDistancia(v){
   var n = Number(v);
   if (!isFinite(n) || n < 0) return distanciaAlvo;
   distanciaAlvo = n;
-  tampaAlvo = n > 20 ? 1 : 0;
+  distanciaRecebida = true;
+  tampaAlvo = n === 0 || n > 20 ? 1 : 0;
   return distanciaAlvo;
 }
 window.definirDistancia = definirDistancia;
@@ -36,10 +38,24 @@ var serialPort = null;
 var serialReader = null;
 var serialBuffer = '';
 var sensorEstadoEl = document.getElementById('estadoSensor');
+var estadoCaixaEl = document.getElementById('estadoCaixa');
 var conectarSensorEl = document.getElementById('conectarSensor');
 
 function atualizarEstadoSensor(texto){
   if (sensorEstadoEl) sensorEstadoEl.textContent = texto;
+}
+var estadoCaixaAtual = null;
+function atualizarEstadoCaixa(){
+  if (!estadoCaixaEl) return;
+  var texto;
+  if (!distanciaRecebida) texto = 'Caixa: sem leitura';
+  else if (cab.tampa >= 0.95) texto = 'Caixa aberta · '+distanciaAlvo.toFixed(1)+' cm';
+  else if (cab.tampa <= 0.05) texto = 'Caixa fechada · '+distanciaAlvo.toFixed(1)+' cm';
+  else texto = tampaAlvo ? 'Caixa: a abrir' : 'Caixa: a fechar';
+  if (texto !== estadoCaixaAtual) {
+    estadoCaixaAtual = texto;
+    estadoCaixaEl.textContent = texto;
+  }
 }
 
 function extrairTemperatura(linha){
@@ -1941,6 +1957,7 @@ function quadro(ts){
   /* --- suavizacao obrigatoria --- */
   valorSuave += (valorAlvo - valorSuave) * 0.07;
   cab.tampa += (tampaAlvo - cab.tampa) * Math.min(1, dt*6);
+  atualizarEstadoCaixa();
 
   P = parametros(valorSuave);
   LUZ = rampa(valorSuave, LUZ_R);
