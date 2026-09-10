@@ -61,7 +61,7 @@ function receberTemperatura(linha){
   var temperatura = extrairTemperatura(linha);
   if (temperatura === null || !isFinite(temperatura) || temperatura === -127) return false;
   definirValor(temperatura);
-  atualizarEstadoSensor('sensor ativo · D5 · '+temperatura.toFixed(1)+' °C');
+  atualizarEstadoSensor('Ligado');
   return true;
 }
 
@@ -85,14 +85,14 @@ async function lerPortaSerial(porta){
       }
     }
   } catch (erro) {
-    if (serialPort === porta) atualizarEstadoSensor('erro na conexao serial · '+erro.message);
+    if (serialPort === porta) atualizarEstadoSensor('Ligacao interrompida');
   } finally {
     leitor.releaseLock();
     if (serialReader === leitor) serialReader = null;
     if (serialPort === porta) {
       serialPort = null;
-      if (conectarSensorEl) conectarSensorEl.textContent = 'Conectar sensor';
-      atualizarEstadoSensor('conexao serial encerrada');
+      if (conectarSensorEl) conectarSensorEl.textContent = 'Conectar';
+      atualizarEstadoSensor('Desconectado');
     }
   }
 }
@@ -107,8 +107,8 @@ async function desconectarSensor(){
   if (porta) {
     try { await porta.close(); } catch (ignore) {}
   }
-  if (conectarSensorEl) conectarSensorEl.textContent = 'Conectar sensor';
-  atualizarEstadoSensor('conexao serial desligada');
+  if (conectarSensorEl) conectarSensorEl.textContent = 'Conectar';
+  atualizarEstadoSensor('Desconectado');
 }
 
 async function conectarSensor(){
@@ -117,7 +117,7 @@ async function conectarSensor(){
     return;
   }
   if (!('serial' in navigator)) {
-    atualizarEstadoSensor('Web Serial indisponivel neste navegador');
+    atualizarEstadoSensor('Ligacao indisponivel');
     return;
   }
   try {
@@ -125,11 +125,11 @@ async function conectarSensor(){
     await porta.open({baudRate:115200});
     serialPort = porta;
     serialBuffer = '';
-    conectarSensorEl.textContent = 'Desconectar sensor';
-    atualizarEstadoSensor('sensor conectado · aguardando leitura do D5');
+    conectarSensorEl.textContent = 'Desligar';
+    atualizarEstadoSensor('A aguardar leitura');
     lerPortaSerial(porta);
   } catch (erro) {
-    if (erro.name !== 'NotFoundError') atualizarEstadoSensor('nao foi possivel conectar · '+erro.message);
+    if (erro.name !== 'NotFoundError') atualizarEstadoSensor('Nao foi possivel ligar');
   }
 }
 
@@ -186,6 +186,7 @@ var W=0,H=0,DPR=1,S=1;
 var L = {};
 var predios=[], estrelas=[], arvores=[], pessoas=[], carros=[], nuvens=[];
 var neve=[], particulas=[];
+var FLOCOS_NEVE = 240;
 var cab = {};
 var P   = {};
 var tempo=0, relogioCarro=0, relogioPessoas=0, relogioFila=0, giroVent=0;
@@ -308,7 +309,7 @@ function construirCena(){
 
   /* --- neve --- */
   neve=[];
-  for(var s=0;s<380;s++) neve.push({ x:r()*W, y:r()*H, r:(0.9+r()*2.6)*S, v:(28+r()*72)*S, f:r()*TAU, osc:8+r()*28 });
+  for(var s=0;s<FLOCOS_NEVE;s++) neve.push({ x:r()*W, y:r()*H, r:(0.9+r()*2.6)*S, v:(28+r()*72)*S, f:r()*TAU, osc:8+r()*28 });
 
   carros=[]; particulas=[];
 }
@@ -402,7 +403,7 @@ function desenharAurora(a){
   ctx.fillStyle=gh; ctx.fillRect(0,0,W,L.horizonte*0.86);
 
   var cores=[[70,240,170],[110,220,255],[170,120,255],[90,255,210],[130,255,190]];
-  for(var f=0;f<5;f++){
+  for(var f=0;f<4;f++){
     var base = L.horizonte*(0.18+f*0.078);
     var amp  = L.horizonte*(0.088+f*0.024);
     var c    = cores[f];
@@ -434,7 +435,7 @@ function desenharAurora(a){
        parecer chuva */
     ctx.globalAlpha = 0.34*a;
     ctx.lineWidth = 2.2;
-    for(var k=0;k<22;k++){
+    for(var k=0;k<12;k++){
       var xx = ((k*97.3 + f*41 + tempo*6) % (W+120)) - 60;
       var yy = base + Math.sin(xx*0.0042 + tempo*0.30 + f*1.7)*amp;
       var x3 = xx + Math.sin(k+tempo*0.2)*10;
@@ -697,26 +698,34 @@ function desenharArvore(a){
 
   /* copa */
   var quantas = Math.floor(a.copa.length * clamp(P.folhas,0,1));
-  for(var c=0;c<quantas;c++){
-    var f2=a.copa[c];
-    var alpha = clamp((P.folhas - f2.ordem)*10, 0, 1);
-    if(alpha<=0.01) continue;
-    var osc = Math.sin(tempo*1.6 + f2.osc)*0.006*(1+P.ventoGelado*2);
-    var cf = corFolha(f2.tom);
-    cf = mixC(cf, [250,253,255], P.neveCopa*0.55);
-    ctx.save();
-    ctx.translate(px + f2.x*A + (f2.y*A)*balanco + osc*A, py + f2.y*A);
-    ctx.rotate(f2.ang + balanco*2);
-    ctx.fillStyle = tc(cf, alpha*(0.92));
-    elipse(0,0,f2.r*A,f2.r*A*0.66,0);
-    ctx.restore();
-  }
-  /* calote de neve por cima da copa */
-  if(P.neveCopa>0.03 && P.folhas>0.2){
-    ctx.fillStyle = tc([252,254,255], P.neveCopa*0.55);
-    for(var c3=0;c3<quantas;c3+=3){
-      var f3=a.copa[c3];
-      elipse(px+f3.x*A+(f3.y*A)*balanco, py+f3.y*A-f3.r*A*0.42, f3.r*A*0.9, f3.r*A*0.36, 0);
+  if(P.neveCopa>0.75){
+    ctx.fillStyle = tc([252,254,255], P.neveCopa*0.78);
+    for(var c=0;c<quantas;c+=2){
+      var f2=a.copa[c];
+      var osc = Math.sin(tempo*1.6 + f2.osc)*0.006*(1+P.ventoGelado*2);
+      elipse(px+f2.x*A+(f2.y*A)*balanco+osc*A, py+f2.y*A-f2.r*A*0.18, f2.r*A*1.20, f2.r*A*0.48, 0);
+    }
+  } else {
+    for(var c2=0;c2<quantas;c2++){
+      var f3=a.copa[c2];
+      var alpha = clamp((P.folhas - f3.ordem)*10, 0, 1);
+      if(alpha<=0.01) continue;
+      var osc2 = Math.sin(tempo*1.6 + f3.osc)*0.006*(1+P.ventoGelado*2);
+      var cf = corFolha(f3.tom);
+      cf = mixC(cf, [250,253,255], P.neveCopa*0.55);
+      ctx.save();
+      ctx.translate(px + f3.x*A + (f3.y*A)*balanco + osc2*A, py + f3.y*A);
+      ctx.rotate(f3.ang + balanco*2);
+      ctx.fillStyle = tc(cf, alpha*0.92);
+      elipse(0,0,f3.r*A,f3.r*A*0.66,0);
+      ctx.restore();
+    }
+    if(P.neveCopa>0.03 && P.folhas>0.2){
+      ctx.fillStyle = tc([252,254,255], P.neveCopa*0.55);
+      for(var c3=0;c3<quantas;c3+=3){
+        var f4=a.copa[c3];
+        elipse(px+f4.x*A+(f4.y*A)*balanco, py+f4.y*A-f4.r*A*0.42, f4.r*A*0.9, f4.r*A*0.36, 0);
+      }
     }
   }
 
@@ -1425,35 +1434,6 @@ function soltarFolhas(a, qtd, ambiente){
   a.tremor = 1;
 }
 
-function sacudirNeve(a){
-  var A=a.alt;
-  for(var i=0;i<26;i++){
-    var f = a.copa[(Math.random()*a.copa.length)|0];
-    novaParticula({ tipo:'flocoCai', x:a.x+f.x*A, y:a.base+f.y*A,
-      vx:(Math.random()-0.5)*30, vy:40+Math.random()*70, r:(1.2+Math.random()*2.4)*S,
-      vida:1, dur:1.6+Math.random()*1.2 });
-  }
-  a.tremor=1;
-}
-
-function bolaDeNeve(x,y){
-  var ang = -Math.PI/2 + (Math.random()-0.5)*1.5;
-  novaParticula({ tipo:'bola', x:x, y:y,
-    vx:Math.cos(ang)*(90+Math.random()*120), vy:Math.sin(ang)*(180+Math.random()*160),
-    r:(9+Math.random()*8)*S, vida:1, dur:4, rot:0, vrot:(Math.random()-0.5)*6, chao:H*(0.90+Math.random()*0.06) });
-  for(var i=0;i<10;i++){
-    novaParticula({ tipo:'po', x:x, y:y, vx:(Math.random()-0.5)*140, vy:(Math.random()-0.5)*140,
-      r:(1+Math.random()*2.4)*S, vida:1, dur:0.5+Math.random()*0.4 });
-  }
-}
-
-function rebentarNeve(x,y,n){
-  for(var i=0;i<n;i++){
-    var a=Math.random()*TAU, v=40+Math.random()*180;
-    novaParticula({ tipo:'po', x:x, y:y, vx:Math.cos(a)*v, vy:Math.sin(a)*v*0.7-40,
-      r:(1+Math.random()*3)*S, vida:1, dur:0.5+Math.random()*0.6 });
-  }
-}
 
 function atualizarParticulas(dt){
   for(var i=particulas.length-1;i>=0;i--){
@@ -1468,13 +1448,6 @@ function atualizarParticulas(dt){
       p.x += (p.vx + P.ventoGelado*40)*dt; p.y += p.vy*dt;
       p.ang += p.vang*dt;
       if(p.y>p.alvoY){ p.y=p.alvoY; p.vy*=-0.18; p.vx*=0.6; p.vang*=0.4; }
-    } else if(p.tipo==='flocoCai'){
-      p.vy += 20*dt; p.x += (p.vx+Math.sin(tempo*3+p.y*0.05)*14)*dt; p.y += p.vy*dt;
-    } else if(p.tipo==='bola'){
-      p.vy += 620*dt; p.x += p.vx*dt; p.y += p.vy*dt; p.rot += p.vrot*dt;
-      if(p.y>p.chao){ rebentarNeve(p.x,p.chao,16); particulas.splice(i,1); continue; }
-    } else if(p.tipo==='po'){
-      p.vy += 260*dt; p.vx*=0.97; p.x+=p.vx*dt; p.y+=p.vy*dt;
     } else if(p.tipo==='gota'){
       p.vy += 480*dt; p.y += p.vy*dt;
     } else if(p.tipo==='faisca'){
@@ -1498,18 +1471,6 @@ function desenharParticulas(){
       ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.ang);
       ctx.fillStyle = tc(corFolha(p.tom), a*0.95);
       elipse(0,0,p.r,p.r*0.46,0);
-      ctx.restore();
-    } else if(p.tipo==='flocoCai'||p.tipo==='po'){
-      ctx.fillStyle = 'rgba(250,253,255,'+(a*0.9)+')';
-      circ(p.x,p.y,p.r*a);
-    } else if(p.tipo==='bola'){
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
-      var g=ctx.createRadialGradient(-p.r*0.3,-p.r*0.3,p.r*0.15,0,0,p.r);
-      g.addColorStop(0,'rgba(255,255,255,0.98)');
-      g.addColorStop(1,'rgba(196,222,240,0.95)');
-      ctx.fillStyle=g; circ(0,0,p.r);
-      ctx.fillStyle='rgba(160,190,215,0.55)';
-      circ(p.r*0.28,p.r*0.18,p.r*0.16); circ(-p.r*0.30,p.r*0.30,p.r*0.11);
       ctx.restore();
     } else if(p.tipo==='gota'){
       ctx.fillStyle='rgba(190,232,255,'+(a*0.85)+')';
@@ -1553,7 +1514,8 @@ function desenharNeve(){
   for(var i=0;i<lim;i++){
     var s=neve[i];
     ctx.globalAlpha = P.neve*(0.42+0.55*(s.r/(3.6*S)));
-    circ(s.x,s.y,s.r);
+    if(s.r<1.8*S) ctx.fillRect(s.x-s.r,s.y-s.r,s.r*2,s.r*2);
+    else circ(s.x,s.y,s.r);
   }
   ctx.globalAlpha=1;
 }
@@ -1918,125 +1880,16 @@ function gerirArvores(dt){
   }
 }
 
-/* =====================================================================
-   17) INTERACAO
-   ===================================================================== */
-function acharArvore(mx,my){
-  for(var i=0;i<arvores.length;i++){
-    var a=arvores[i], A=a.alt;
-    var cx=a.x, cy=a.base-A*0.62;
-    if((mx-cx)*(mx-cx)/(A*A*0.30) + (my-cy)*(my-cy)/(A*A*0.34) < 1) return a;
-    if(Math.abs(mx-a.x)<A*0.09 && my<a.base+6*S && my>a.base-A*0.5) return a;
-  }
-  return null;
-}
-function acharMaca(mx,my){
-  if(P.macas<0.20) return null;
-  for(var i=0;i<arvores.length;i++){
-    var a=arvores[i], A=a.alt;
-    for(var m=0;m<a.macas.length;m++){
-      var mm=a.macas[m];
-      if(mm.caindo||mm.vida<=0) continue;
-      var x=a.x+mm.bx*A+mm.ox, y=a.base+mm.by*A+mm.oy;
-      var r=Math.max(mm.r*A*2.6, 22*S);
-      if((mx-x)*(mx-x)+(my-y)*(my-y) < r*r) return {a:a,m:mm};
-    }
-  }
-  return null;
-}
-function acharPessoa(mx,my){
-  for(var i=0;i<pessoas.length;i++){
-    var p=pessoas[i];
-    if(!p.visivel||p.alpha<0.4||p.alvo==='dentro') continue;
-    var h=76*S*p.esc;
-    if(Math.abs(mx-p.x) < h*0.26 && my > p.base-h*1.12 && my < p.base+10*S) return p;
-  }
-  return null;
-}
-
-function clique(mx,my){
-  var t = valorSuave;
-
-  /* estado 1: sai sempre uma bola de neve */
-  if(t < 12.5){
-    bolaDeNeve(mx,my);
-    var a0 = acharArvore(mx,my);
-    if(a0) sacudirNeve(a0);
-    dica('bola de neve!');
-    return;
-  }
-  /* estado 2: maçãs caem */
-  var alvoM = acharMaca(mx,my);
-  if(alvoM){
-    alvoM.m.caindo = true;
-    alvoM.m.vy = 0; alvoM.m.vx = (Math.random()-0.5)*40; alvoM.m.vrot=(Math.random()-0.5)*8;
-    alvoM.a.tremor = 0.7;
-    dica('maca a cair');
-    return;
-  }
-  /* arvores */
-  var a = acharArvore(mx,my);
-  if(a){
-    if(t >= 30.5){ a.fogo = Math.max(a.fogo, 1); dica('a arvore pegou fogo'); }
-    else { soltarFolhas(a, 30); dica('folhas a cair'); }
-    return;
-  }
-  /* pessoas -> entram na cabine */
-  var p = acharPessoa(mx,my);
-  if(p){ p.alvo='dentro'; dica('a entrar na cabine refrigerada'); return; }
-
-  /* nada especifico */
-  if(t>=30.5){
-    for(var i=0;i<6;i++)
-      novaParticula({ tipo:'fumo', x:mx+(Math.random()-0.5)*20, y:my, vx:(Math.random()-0.5)*30,
-        vy:-20, r:(6+Math.random()*10)*S, vida:1, dur:1.6 });
-  } else {
-    rebentarNeve(mx,my,10);
-  }
-}
-
-var dicaEl = document.getElementById('dica');
-var dicaTimer = 0, dicaActual = null;
-function escreverDica(txt){ if(txt!==dicaActual){ dicaActual=txt; dicaEl.textContent=txt; } }
-function dica(txt){ escreverDica(txt); dicaTimer = 2.0; }
-
-cv.addEventListener('pointerdown', function(ev){
-  var r = cv.getBoundingClientRect();
-  clique(ev.clientX-r.left, ev.clientY-r.top);
-});
 
 /* =====================================================================
    18) HUD
    ===================================================================== */
 var elContador = document.getElementById('contador');
-var elSuave    = document.getElementById('lidoSuave');
-var elRotulo   = document.getElementById('rotulo');
-
-var NOMES = [
-  'estado 1 · -20° a 10° · nevao e aurora boreal',
-  'estado 2 · 11° a 20° · ventos gelados e macieiras',
-  'estado 3 · 21° a 30° · folhas a cair, sol forte',
-  'estado 4 · 31° a 50° · calor intenso, cabine gelada'
-];
-var DICAS = [
-  'clica no ecra: sai uma bola de neve',
-  'clica nas macas da arvore',
-  'clica nas arvores ou nas pessoas',
-  'clica nas arvores: elas pegam fogo'
-];
-function indiceEstado(v){ return v<=10?0 : v<=20?1 : v<=30?2 : 3; }
-
-var hudAlvo=null, hudSuave=null, hudIdx=null;
-function atualizarHUD(dt){
-  /* so escreve no DOM quando ha mudanca: evita reflow a 60 fps */
-  var a1 = valorAlvo.toFixed(1), s1 = valorSuave.toFixed(1);
+var hudAlvo=null;
+function atualizarHUD(){
+  var a1 = valorAlvo.toFixed(1);
   if(a1!==hudAlvo){ hudAlvo=a1;
     elContador.innerHTML = a1+'<span class="text-2xl md:text-3xl align-top">&deg;C</span>'; }
-  if(s1!==hudSuave){ hudSuave=s1; elSuave.textContent = 'SUAVIZADO '+s1+' °C'; }
-  var idx = indiceEstado(valorAlvo);
-  if(idx!==hudIdx){ hudIdx=idx; elRotulo.textContent = NOMES[idx]; }
-  if(dicaTimer>0){ dicaTimer-=dt; if(dicaTimer<=0) escreverDica(DICAS[idx]); }
-  else escreverDica(DICAS[idx]);
 }
 
 /* =====================================================================
@@ -2095,7 +1948,7 @@ function quadro(ts){
   gv.addColorStop(1,'rgba(0,0,0,'+(0.30+0.22*P.noite)+')');
   ctx.fillStyle=gv; ctx.fillRect(0,0,W,H);
 
-  atualizarHUD(dt);
+  atualizarHUD();
 }
 
 /* =====================================================================
