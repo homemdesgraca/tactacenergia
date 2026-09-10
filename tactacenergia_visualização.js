@@ -1,14 +1,13 @@
 "use strict";
 
 /* =====================================================================
-   1) ENTRADA UNICA DE DADOS   ->   definirValor(v)
-   ---------------------------------------------------------------------
-   O DS18B20 chega pela porta serial do microcontrolador. O valor lido
-   entra aqui para que a animacao continue independente da origem.
+   1) LEITURAS DOS SENSORES
    ===================================================================== */
 var MIN = -20, MAX = 50;
-var valorAlvo  = -5;   /* ultimo valor recebido do sensor   */
-var valorSuave = -5;   /* valor interpolado usado no desenho */
+var valorAlvo  = -5;
+var valorSuave = -5;
+var distanciaAlvo = 0;
+var tampaAlvo = 0;
 
 function definirValor(v){
   var n = Number(v);
@@ -18,13 +17,20 @@ function definirValor(v){
 }
 window.definirValor = definirValor;
 
+function definirDistancia(v){
+  var n = Number(v);
+  if (!isFinite(n) || n < 0) return distanciaAlvo;
+  distanciaAlvo = n;
+  tampaAlvo = n > 20 ? 1 : 0;
+  return distanciaAlvo;
+}
+window.definirDistancia = definirDistancia;
+
 /* =====================================================================
-   2) DS18B20 VIA WEB SERIAL
+   2) LEITURA VIA WEB SERIAL
    ---------------------------------------------------------------------
-   O HTML nao consegue acessar um pino D5 diretamente. Ele conversa com
-   o microcontrolador pela USB/serial; o firmware deve imprimir uma
-   leitura em cada linha, por exemplo: 23.4 ou "Temperature: 23.4 C".
-   Tambem sao aceitos JSON com temperature, temperatureC ou temp.
+   O firmware envia uma linha JSON, por exemplo:
+   {"temperatureC":23.4,"distanceCm":21.0}
    ===================================================================== */
 var serialPort = null;
 var serialReader = null;
@@ -50,19 +56,40 @@ function extrairTemperatura(linha){
 
   var correspondencia = texto.match(/(?:temperature|temperatura|temp|celsius|ds18b20)\s*[:=]?\s*(-?\d+(?:[.,]\d+)?)/i);
   if (correspondencia) return Number(correspondencia[1].replace(',', '.'));
-
   if (/^-?\d+(?:[.,]\d+)?(?:\s*°?\s*[cf])?$/i.test(texto))
     return Number(texto.replace(',', '.').replace(/[°cf]/ig, '').trim());
-
   return null;
 }
 
-function receberTemperatura(linha){
+function extrairDistancia(linha){
+  var texto = String(linha || '').trim();
+  if (!texto) return null;
+  try {
+    var objeto = JSON.parse(texto);
+    var valorJSON = objeto.distanceCm;
+    if (valorJSON === undefined) valorJSON = objeto.distance;
+    if (valorJSON === undefined) valorJSON = objeto.distancia;
+    if (valorJSON !== undefined && isFinite(Number(valorJSON))) return Number(valorJSON);
+  } catch (ignore) {}
+  var correspondencia = texto.match(/(?:distance|distancia|dist)\s*[:=]?\s*(\d+(?:[.,]\d+)?)/i);
+  return correspondencia ? Number(correspondencia[1].replace(',', '.')) : null;
+}
+
+function receberLeitura(linha){
   var temperatura = extrairTemperatura(linha);
-  if (temperatura === null || !isFinite(temperatura) || temperatura === -127) return false;
-  definirValor(temperatura);
-  atualizarEstadoSensor('Ligado');
-  return true;
+  var distancia = extrairDistancia(linha);
+  var recebeu = false;
+
+  if (temperatura !== null && isFinite(temperatura) && temperatura !== -127) {
+    definirValor(temperatura);
+    recebeu = true;
+  }
+  if (distancia !== null && isFinite(distancia) && distancia >= 0) {
+    definirDistancia(distancia);
+    recebeu = true;
+  }
+  if (recebeu) atualizarEstadoSensor('Ligado');
+  return recebeu;
 }
 
 async function lerPortaSerial(porta){
@@ -73,7 +100,7 @@ async function lerPortaSerial(porta){
     while (serialPort === porta) {
       var resultado = await leitor.read();
       if (resultado.done) {
-        if (serialBuffer.trim()) receberTemperatura(serialBuffer);
+        if (serialBuffer.trim()) receberLeitura(serialBuffer);
         serialBuffer = '';
         break;
       }
@@ -81,7 +108,7 @@ async function lerPortaSerial(porta){
         serialBuffer += decoder.decode(resultado.value, {stream:true});
         var linhas = serialBuffer.split(/\r?\n/);
         serialBuffer = linhas.pop();
-        for (var i=0;i<linhas.length;i++) receberTemperatura(linhas[i]);
+        for (var i=0;i<linhas.length;i++) receberLeitura(linhas[i]);
       }
     }
   } catch (erro) {
@@ -283,6 +310,7 @@ function construirCena(){
   cab.portaW = cab.w*0.32;
   cab.portaH = cab.h*0.56;
   cab.portaX = cab.x + cab.w*0.16;
+  cab.tampa = 0;
 
   /* --- arvores --- */
   arvores=[];
@@ -1141,20 +1169,27 @@ function desenharCabine(){
 
   /* ---------------- TAMPO / TELHADO ---------------- */
   var telha=h*0.070, beiral=w*0.075;
-  var R1=[xL-beiral,topo-telha], R2=[xR+beiral,topo-telha];
+  var subidaTampa = cab.tampa*h*0.52;
+  var R1=[xL-beiral,topo-telha-subidaTampa], R2=[xR+beiral,topo-telha-subidaTampa];
   var R3=[xR+beiral+dx,topo-telha-dy], R4=[xL-beiral+dx,topo-telha-dy];
-  poliCor([R1,R2,R3,R4], tc([52,52,60]));                    /* tampo   */
-  poliCor([R1,R2,[xR+beiral,topo],[xL-beiral,topo]], tc(preto));
-  poliCor([R2,R3,[xR+beiral+dx,topo-dy],[xR+beiral,topo]], tc([30,30,36]));
+  var F1t=[xL-beiral,topo-subidaTampa], F2t=[xR+beiral,topo-subidaTampa];
+  poliCor([R1,R2,R3,R4], tc([52,52,60]));
+  poliCor([R1,R2,F2t,F1t], tc(preto));
+  poliCor([R2,R3,[xR+beiral+dx,topo-dy],F2t], tc([30,30,36]));
   ctx.strokeStyle=tc([88,90,98],0.6); ctx.lineWidth=1.4*S;
   for(var tl=1;tl<4;tl++){
     var f2=tl/4;
     linha(lerp(R1[0],R2[0],f2), R1[1], lerp(R4[0],R3[0],f2), R4[1]);
   }
   if(P.neveChao>0.02){
-    ctx.fillStyle=tc([246,251,255],P.neveChao*0.95);
     poliCor([[R1[0],R1[1]-4*S],[R2[0],R2[1]-4*S],[R3[0],R3[1]-4*S],[R4[0],R4[1]-4*S]],
             tc([246,251,255],P.neveChao*0.95));
+  }
+  if(cab.tampa>0.02){
+    ctx.strokeStyle=tc([30,30,36], cab.tampa);
+    ctx.lineWidth=Math.max(2*S,3);
+    linha(xL-beiral,topo, F1t[0],F1t[1]);
+    linha(xR+beiral,topo, F2t[0],F2t[1]);
   }
 
   /* ---------------- VENTOINHAS NA PAREDE LATERAL VISIVEL ----------------
@@ -1905,6 +1940,7 @@ function quadro(ts){
 
   /* --- suavizacao obrigatoria --- */
   valorSuave += (valorAlvo - valorSuave) * 0.07;
+  cab.tampa += (tampaAlvo - cab.tampa) * Math.min(1, dt*6);
 
   P = parametros(valorSuave);
   LUZ = rampa(valorSuave, LUZ_R);
